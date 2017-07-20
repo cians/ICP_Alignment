@@ -22,7 +22,7 @@ PointCloud::Ptr image2PointCloud( cv::Mat& rgb, cv::Mat& depth, CAMERA_INTRINSIC
                 continue;
             // d 存在值，则向点云增加一个点
             PointT p;
-
+	    //m指图像的行数，n是图像的列数
             // 计算这个点的空间坐标
             p.z = double(d) / camera.scale;
             p.x = (n - camera.cx) * p.z / camera.fx;
