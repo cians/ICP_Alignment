@@ -58,12 +58,6 @@ struct RESULT_OF_PNP
     int inliers;
 };
 
-struct Transform
-{
-   Matrix<double,3,3>R;
-   Matrix<double,3,1>T;
-   
-};
 
 // 函数接口
 // image2PonitCloud 将rgb图转换为点云
