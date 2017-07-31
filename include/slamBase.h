@@ -37,7 +37,7 @@ typedef pcl::PointXYZRGBA PointT;
 typedef pcl::PointCloud<PointT> PointCloud;
 
 // 相机内参结构
-struct CAMERA_INTRINSIC_PARAMETERS 
+struct CAMERA_INS 
 { 
     double cx, cy, fx, fy, scale;
 };
@@ -61,30 +61,30 @@ struct RESULT_OF_PNP
 
 // 函数接口
 // image2PonitCloud 将rgb图转换为点云
-PointCloud::Ptr image2PointCloud( cv::Mat& rgb, cv::Mat& depth, CAMERA_INTRINSIC_PARAMETERS& camera );
+PointCloud::Ptr image2PointCloud( cv::Mat& rgb, cv::Mat& depth, CAMERA_INS& camera );
 
 // point2dTo3d 将单个点从图像坐标转换为空间坐标
 // input: 3维点Point3f (u,v,d)
-cv::Point3f point2dTo3d( cv::Point3f& point, CAMERA_INTRINSIC_PARAMETERS& camera );
+cv::Point3f point2dTo3d( cv::Point3f& point, CAMERA_INS& camera );
 
 // computeKeyPointsAndDesp 同时提取关键点与特征描述子
 void computeKeyPointsAndDesp( FRAME& frame, string detector, string descriptor );
 
 // estimateMotion 计算两个帧之间的运动
 // 输入：帧1和帧2, 相机内参
-RESULT_OF_PNP estimateMotion( FRAME& frame1, FRAME& frame2, CAMERA_INTRINSIC_PARAMETERS& camera );
+RESULT_OF_PNP estimateMotion( FRAME& frame1, FRAME& frame2, CAMERA_INS& camera );
 
 // cvMat2Eigen
 Eigen::Isometry3d cvMat2Eigen( cv::Mat& rvec, cv::Mat& tvec );
 
 // joinPointCloud 
-PointCloud::Ptr joinPointCloud( PointCloud::Ptr original, FRAME& newFrame, Eigen::Isometry3d T, CAMERA_INTRINSIC_PARAMETERS& camera ) ;
+PointCloud::Ptr joinPointCloud( PointCloud::Ptr original, FRAME& newFrame, Eigen::Isometry3d T, CAMERA_INS& camera ) ;
 
 // 参数读取类
 class ParameterReader
 {
 public:
-    ParameterReader( string filename="./parameters.txt" )
+    ParameterReader( string filename="/home/cian/Documents/workspace/rgbd-slam-tutorial-gx-master/part VI/parameters.txt" )
     {
         ifstream fin( filename.c_str() );
         if (!fin)
@@ -127,10 +127,10 @@ public:
     map<string, string> data;
 };
 
-inline static CAMERA_INTRINSIC_PARAMETERS getDefaultCamera()
+inline static CAMERA_INS getDefaultCamera()
 {
     ParameterReader pd;
-    CAMERA_INTRINSIC_PARAMETERS camera;
+    CAMERA_INS camera;
     camera.fx = atof( pd.getData( "camera.fx" ).c_str());
     camera.fy = atof( pd.getData( "camera.fy" ).c_str());
     camera.cx = atof( pd.getData( "camera.cx" ).c_str());

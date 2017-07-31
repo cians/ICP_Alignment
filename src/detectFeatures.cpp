@@ -95,7 +95,7 @@ int main( int argc, char** argv )
     vector< cv::Point2f > pts_img;
 
     // 相机内参
-    CAMERA_INTRINSIC_PARAMETERS C;
+    CAMERA_INS C;
     C.cx = 325.5;
     C.cy = 253.5;
     C.fx = 518.0;

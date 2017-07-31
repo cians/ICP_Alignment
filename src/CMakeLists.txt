@@ -3,7 +3,7 @@ ADD_EXECUTABLE( main main.cpp )
 
 # 增加PCL库的依赖
 FIND_PACKAGE( PCL REQUIRED COMPONENTS common io visualization filters )
-list(REMOVE_ITEM PCL_LIBRARIES "vtkproj4") # use this in Ubuntu 16.04
+#list(REMOVE_ITEM PCL_LIBRARIES "vtkproj4") # use this in Ubuntu 16.04
 
 # 增加opencv的依赖
 FIND_PACKAGE( OpenCV REQUIRED )
@@ -31,26 +31,32 @@ TARGET_LINK_LIBRARIES( slambase
     ${OpenCV_LIBS} 
     ${PCL_LIBRARIES} )
 
-ADD_EXECUTABLE( detectFeatures detectFeatures.cpp )
-TARGET_LINK_LIBRARIES( detectFeatures 
-    slambase
-    ${OpenCV_LIBS} 
-    ${PCL_LIBRARIES} )
+# ADD_EXECUTABLE( detectFeatures detectFeatures.cpp )
+# TARGET_LINK_LIBRARIES( detectFeatures 
+#     slambase
+#     ${OpenCV_LIBS} 
+#     ${PCL_LIBRARIES} )
+# 
+# ADD_EXECUTABLE( joinPointCloud joinPointCloud.cpp)
+# TARGET_LINK_LIBRARIES( joinPointCloud
+#     slambase
+#     ${OpenCV_LIBS} 
+#     ${PCL_LIBRARIES} )
 
-ADD_EXECUTABLE( joinPointCloud joinPointCloud.cpp)
-TARGET_LINK_LIBRARIES( joinPointCloud
-    slambase
-    ${OpenCV_LIBS} 
-    ${PCL_LIBRARIES} )
+# ADD_EXECUTABLE( visualOdometry visualOdometry.cpp)
+# TARGET_LINK_LIBRARIES( visualOdometry
+#     slambase
+#     ${OpenCV_LIBS} 
+#     ${PCL_LIBRARIES} )
 
-ADD_EXECUTABLE( visualOdometry visualOdometry.cpp)
-TARGET_LINK_LIBRARIES( visualOdometry
-    slambase
-    ${OpenCV_LIBS} 
-    ${PCL_LIBRARIES} )
-
-ADD_EXECUTABLE( slamEnd slamEnd.cpp )
-TARGET_LINK_LIBRARIES( slamEnd
+# ADD_EXECUTABLE( slamEnd slamEnd.cpp )
+# TARGET_LINK_LIBRARIES( slamEnd
+#     slambase
+#     ${OpenCV_LIBS}
+#     ${PCL_LIBRARIES}
+#     g2o_core g2o_types_slam3d g2o_solver_csparse g2o_stuff g2o_csparse_extension ${CSPARSE_LIBRARY})
+ADD_EXECUTABLE( slamEnd-ICP slamEnd-ICP.cpp )
+TARGET_LINK_LIBRARIES( slamEnd-ICP
     slambase
     ${OpenCV_LIBS}
     ${PCL_LIBRARIES}

@@ -8,7 +8,7 @@
 
 #include "slamBase.h"
 
-PointCloud::Ptr image2PointCloud( cv::Mat& rgb, cv::Mat& depth, CAMERA_INTRINSIC_PARAMETERS& camera )
+PointCloud::Ptr image2PointCloud( cv::Mat& rgb, cv::Mat& depth, CAMERA_INS& camera )
 {
     PointCloud::Ptr cloud ( new PointCloud );
 
@@ -45,7 +45,7 @@ PointCloud::Ptr image2PointCloud( cv::Mat& rgb, cv::Mat& depth, CAMERA_INTRINSIC
     return cloud;
 }
 
-cv::Point3f point2dTo3d( cv::Point3f& point, CAMERA_INTRINSIC_PARAMETERS& camera )
+cv::Point3f point2dTo3d( cv::Point3f& point, CAMERA_INS& camera )
 {
     cv::Point3f p; // 3D 点
     p.z = double( point.z ) / camera.scale;
@@ -78,7 +78,7 @@ void computeKeyPointsAndDesp( FRAME& frame, string detector, string descriptor )
 // estimateMotion 计算两个帧之间的运动
 // 输入：帧1和帧2
 // 输出：rvec 和 tvec
-RESULT_OF_PNP estimateMotion( FRAME& frame1, FRAME& frame2, CAMERA_INTRINSIC_PARAMETERS& camera )
+RESULT_OF_PNP estimateMotion( FRAME& frame1, FRAME& frame2, CAMERA_INS& camera )
 {
     static ParameterReader pd;
     vector< cv::DMatch > matches;
@@ -183,7 +183,7 @@ Eigen::Isometry3d cvMat2Eigen( cv::Mat& rvec, cv::Mat& tvec )
 // joinPointCloud 
 // 输入：原始点云，新来的帧以及它的位姿
 // 输出：将新来帧加到原始帧后的图像
-PointCloud::Ptr joinPointCloud( PointCloud::Ptr original, FRAME& newFrame, Eigen::Isometry3d T, CAMERA_INTRINSIC_PARAMETERS& camera ) 
+PointCloud::Ptr joinPointCloud( PointCloud::Ptr original, FRAME& newFrame, Eigen::Isometry3d T, CAMERA_INS& camera ) 
 {
     PointCloud::Ptr newCloud = image2PointCloud( newFrame.rgb, newFrame.depth, camera );
 

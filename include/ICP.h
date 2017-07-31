@@ -1,9 +1,34 @@
 # pragma once
-#include <vector>
 #include <Eigen/Core>
 #include <Eigen/Dense>
 using namespace Eigen;
 typedef int Index;
+struct Vertice //点的世界坐标和图像坐标
+{
+  Vector3d worldCoord;
+  Vector2i imgCoord;
+};
+//eulerAngle2RotationMatrix
+Matrix3d eulerAngle2R(double alpha, double beta, double gamma) //alpha ->x; beta ->y; gamma ->z
+{
+  Matrix3d R;
+  R(0,0) = 1;      R(0,1) = alpha*beta - gamma;  R(0,2) = alpha*gamma +beta;
+  R(1,0) = gamma;  R(1,1) = alpha*beta*gamma+1;  R(1,2) = beta*gamma - alpha;
+  R(2,0) = -beta;  R(2,1) = alpha;               R(2,2) =  1;
+  return R;
+}
+//pairs
+class PointPair
+{
+  public://默认初始化为0
+    PointPair(Vector3d lo,Vector3d mo,Vector2i id,Vector3d mo_n):local(lo),model(mo),idx(id),modle_normal(mo_n){}
+    PointPair(){}
+    Vector3d local;
+    Vector3d model;
+    Vector2i idx;
+    Vector3d modle_normal;
+    
+};
 //刚体变换R,t
 template <typename T>
 class RigidTransf
@@ -18,24 +43,17 @@ class RigidTransf
     Matrix<T,3,3> R;
     Matrix<T,3,1> t;
 };
-
-//homogeneous3d->2d
-template<typename t,Index i,Index n>
-Matrix<t,i-1,n> dehomogenize(Matrix<t,i,n> source)
+//反对称矩阵
+template<typename S>
+Matrix<S, 3, 3> skew_symmetry(Matrix<S,3,1> in)
 {
-  Matrix<t,2,n> output;
-  for (Index j = 0;j< i-1;++j) output(j) = source(j)/source(i-1) ;
-  return output;
+  Matrix<S, 3, 3> out;
+  out.row(0) = Vector3d(0, -in(2), in(1));
+  out.row(1) = Vector3d(in(2), 0, -in(0));
+  out.row(2) = Vector3d(-in(1), in(0), 0);
+  return out;
 }
-//homogeneous
-template<typename S,Index R>
-Matrix<S, R + 1, 1> homogeneous() const
-    {
-        Matrix<S, R + 1, 1> h;
-        for (Index r = 0; r < R; r++) h(r) = (*this)(r);
-        h(R) = 1;
-        return h;
-    }
+
 //矩阵全置为it
 template<typename t,Index n,Index m>
 Matrix<t,m,n> init_Mat(Matrix<t,m,n> Mat,int it)
@@ -45,20 +63,10 @@ Matrix<t,m,n> init_Mat(Matrix<t,m,n> Mat,int it)
        Mat(j,i) = it;
      return Mat;
 }
-//Cross
-template <typename S>
-_CPU_AND_GPU_ Vector<S, 3> Cross(const Vector<S, 3> &lhs,
-                                 const Vector<S, 3> &rhs)
-{
-    Vector<S, 3> result;
-    result.x() = lhs.y() * rhs.z() - lhs.z() * rhs.y();
-    result.y() = -lhs.x() * rhs.z() + lhs.z() * rhs.x();
-    result.z() = lhs.x() * rhs.y() - lhs.y() * rhs.x();
-    return result;
-}
+
 //矩阵相应位置相乘
 template <typename S, int R>
-S Dot(const Vector<S, R> &lhs, const Vector<S, R> &rhs)
+S Dot( Matrix<S, R,1> &lhs, Matrix<S, R,1> &rhs)
 {
     S result = 0;
     for (Index i = 0; i < R; ++i) result += lhs[i] * rhs[i];

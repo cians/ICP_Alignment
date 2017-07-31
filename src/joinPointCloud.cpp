@@ -41,7 +41,7 @@ int main( int argc, char** argv )
     computeKeyPointsAndDesp( frame2, detecter, descriptor );
 
     // 相机内参
-    CAMERA_INTRINSIC_PARAMETERS camera;
+    CAMERA_INS camera;
     camera.fx = atof( pd.getData( "camera.fx" ).c_str());
     camera.fy = atof( pd.getData( "camera.fy" ).c_str());
     camera.cx = atof( pd.getData( "camera.cx" ).c_str());

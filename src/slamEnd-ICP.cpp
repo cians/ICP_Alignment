@@ -23,7 +23,7 @@ using namespace std;
 #include <g2o/core/optimization_algorithm_levenberg.h>
 #include <g2o/solvers/eigen/linear_solver_eigen.h>
 
-
+#include "ICP.cpp"
 // 给定index，读取一帧数据
 FRAME readFrame( int index, ParameterReader& pd );
 // 估计一个运动的大小
@@ -43,7 +43,7 @@ int main( int argc, char** argv )
     // 我们总是在比较currFrame和lastFrame
     string detector = pd.getData( "detector" );
     string descriptor = pd.getData( "descriptor" );
-    CAMERA_INTRINSIC_PARAMETERS camera = getDefaultCamera();
+    CAMERA_INS camera = getDefaultCamera();
     computeKeyPointsAndDesp( lastFrame, detector, descriptor );
     PointCloud::Ptr cloud = image2PointCloud( lastFrame.rgb, lastFrame.depth, camera );
     
@@ -102,7 +102,8 @@ int main( int argc, char** argv )
  */       
 //     PointCloud::Ptr cloud0 = image2PointCloud( lastFrame.rgb, lastFrame.depth, camera );
 //     PointCloud::Ptr cloud1 = image2PointCloud( currFrame.rgb, currFrame.depth, camera );
-    
+       Eigen::Isometry3d T = motionEstimate(lastFrame,currFrame,camera);
+        cout<<"T="<<T.matrix()<<endl;
         // 去掉可视化的话，会快一些
         if ( visualize == true )
         {

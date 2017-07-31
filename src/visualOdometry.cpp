@@ -30,7 +30,7 @@ int main( int argc, char** argv )
     // 我们总是在比较currFrame和lastFrame
     string detector = pd.getData( "detector" );
     string descriptor = pd.getData( "descriptor" );
-    CAMERA_INTRINSIC_PARAMETERS camera = getDefaultCamera();
+    CAMERA_INS camera = getDefaultCamera();
     computeKeyPointsAndDesp( lastFrame, detector, descriptor );
     PointCloud::Ptr cloud = image2PointCloud( lastFrame.rgb, lastFrame.depth, camera );
     
