@@ -77,7 +77,7 @@ Vertices frame2vertices(FRAME f,CAMERA_INS camera)//
 Vector3d find_assoc_3Dpoint(int m,int n,Vertices Vset,FRAME f,CAMERA_INS camera)//越界返回的是0
 {
     Vector3d p;
-    if(m >= f.depth.rows || n >= f.depth.cols)
+    if(m >= f.depth.rows || n >= f.depth.cols || m < 1 || n < 1)
        return Vector3d::Zero();
     ushort d = f.depth.ptr<ushort>(m)[n];
     if(d == 0)
@@ -150,9 +150,10 @@ bool useless(Vector3d p)
 }
 RigidTransf<double> compute_rigidTransform (Vertices Vset0, Vertices Vset1,RigidTransf<double> transform2model,double & E_linear,FRAME f1,CAMERA_INS camera)
 {
-    Matrix<PointPair,Eigen::Dynamic,1> pairs;//储存匹配点信息
+    RigidTransf<double>  outZero;
     Matrix<double, Eigen::Dynamic,6> cof_A;//需要自己回收吗？
     Matrix<double, Eigen::Dynamic,1> cof_b;
+     Eigen::Matrix<double,6,1> cof_x;
     int pair_index = 0;
     for (int i = 0; i < Vset0.size();i++)
       {
@@ -206,9 +207,6 @@ RigidTransf<double> compute_rigidTransform (Vertices Vset0, Vertices Vset1,Rigid
 	for(int i = 0; i < 6;i++)
 	    cof_A(pair_index,i) = A_i(i);
 	cof_b(pair_index) = b_i;
-	PointPair pa(local_p,model_p,model_ix,model_n);//依次是local，model，idx，model_n
-	pairs.resize(pair_index+1,1);
-	pairs(pair_index) = pa;
 	++pair_index;
 	
 // 	testDBG(local_p);
@@ -219,23 +217,24 @@ RigidTransf<double> compute_rigidTransform (Vertices Vset0, Vertices Vset1,Rigid
 //  	    break;
       }
       std::cout<<"匹配点对数:"<<pair_index<<std::endl;
-// 线性最小二乘问题，normal equations 最快，QR次之，SVD最慢。
-// 问题a，B，y都是欧拉角，需要加优化的约束吗？
-//      Eigen::Matrix<double,6,1> cof_x = (cof_A.transpose()*cof_A).ldlt().solve(At_b);
- //    testDBG(cof_A);
- //    testDBG();
-     Eigen::Matrix<double,6,1> cof_x = cof_A.colPivHouseholderQr().solve(cof_b);
+//    线性最小二乘问题，normal equations 最快，QR次之，SVD最慢。
+//    问题a，B，y都是欧拉角，需要加优化的约束吗？
+//    Eigen::Matrix<double,6,1> cof_x = (cof_A.transpose()*cof_A).ldlt().solve(At_b);
+//    testDBG(cof_A);
+//    testDBG();
+      if(pair_index < 20)//点太少 可能无解
+	return outZero;
+     cof_x = cof_A.colPivHouseholderQr().solve(cof_b);
      Matrix3d R = eulerAngle2R(cof_x(0),cof_x(1),cof_x(2));
      Vector3d T = Vector3d(cof_x(3),cof_x(4),cof_x(5));
-//      if(std::isnan(R(0,0)) || std::isnan(T(0)))
-//        return RigidTransf<double> zero;
+     //误差
+     E_linear = (cof_A*cof_x - cof_b).norm()/cof_b.norm();
+     std::cout<<"中间误差："<<E_linear<<'\n';
+     
      testDBG(Vector3d(cof_x(0),cof_x(1),cof_x(2)));
      testDBG(T);
     // testDBG(cof_b);
      RigidTransf<double>  Trans2Model(R,T);
-     //误差
-     E_linear = (cof_A*cof_x - cof_b).norm();
-     std::cout<<"中间误差："<<E_linear<<'\n';
     // std::cout<<"中间变换矩阵transform"<<Trans2Model<<std::endl;
      return Trans2Model;
   
@@ -245,15 +244,15 @@ Isometry3d motionEstimate(FRAME frame0, FRAME frame1,CAMERA_INS camera)
   //世界坐标,需不需要双边滤波？暂时不
   Vertices Vset0 = frame2vertices(frame0,camera);
   Vertices Vset1 = frame2vertices(frame1,camera);
-  if(Vset0.size() < 20 || Vset1.size() < 20)//点少的图像不能做估计,边界上的点也不要
+  if(Vset0.size() < 100 || Vset1.size() < 100)//点少的图像不能做估计,边界上的点也不要
        return Isometry3d::Identity();
   //原始的为非线性 E = sum[(Rpi+t-qi)*ni]^2
   //线性化： E = sum [(pi-qi)*ni+r*(pixni)+t*ni]^2;
   //double E_nonlinear = 0;
-  Matrix<double,10,1> E_list;
+  Matrix<double,5,1> E_list;
   RigidTransf<double> trans2model;
   //ICP 迭代次数
-  for(int iter = 0; iter < 10; iter++)
+  for(int iter = 0; iter < 5; iter++)
   {
     double E_linear = 0;
     RigidTransf<double> trans_incre = compute_rigidTransform(Vset0,Vset1,trans2model,E_linear,frame1,camera);
