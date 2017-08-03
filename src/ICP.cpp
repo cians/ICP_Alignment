@@ -1,100 +1,121 @@
 
 #include <Eigen/Dense>
 #include <Eigen/Core>
+#include <boost/graph/graph_concepts.hpp>
 #include "slamBase.h"
 #include "ICP.h"
-
-#ifndef __TESTDBG_H__
-#define __TESTDBG_H__
-
-#define DBG // 启用 DBG 宏时将开启调试输出
-
-#ifdef  DBG
+#include "opencv2/imgproc/imgproc.hpp"
+#include "opencv2/highgui/highgui.hpp"
+//#define DEBUG // 启用 IcpDEBUG 宏时将开启调试输出
+//#define DEBUG_ITER
+#ifdef DEBUG_ITER
 #include <stdio.h>
-template <typename S>
-void testDBG(S a)
-{
-  std::cout<<a<<'\n';
-}
 template <typename S,int R>
-void testDBG(Eigen::Matrix<S,R,1> V)
+void IcpDEBUG_iter(Eigen::Matrix<S,R,1> V)
 {
   std::cout<<V<<'\n';
 }
+template <typename S>
+void IcpDEBUG_iter(S a)
+{
+  std::cout<<a<<'\n';
+}
+#else
+#define IcpDEBUG_iter(b)
+#endif
 
-void testDBG()
+
+#ifdef  DEBUG
+#include <stdio.h>
+template <typename S>
+void IcpDEBUG(S a)
+{
+  std::cout<<a<<'\n';
+}
+void IcpDEBUG()
 {
   printf("调试输出结束位..\n");
 }
 #else
-#define  testDBG(a)
-#endif
+#define  IcpDEBUG(a)
 #endif
 
 typedef Eigen::Matrix<double,3,1> Vector3d;
 typedef Eigen::Matrix<Vertice, Eigen::Dynamic,1> Vertices;//还需测试
 using namespace Eigen;
 
-double thresh_dis = 2.7;
-Vertices frame2vertices(FRAME f,CAMERA_INS camera)//
+void BilateralFilter_depth(cv::Mat depth,cv::Mat output)
 {
-   Vertices Vsets;
-   int num = 0;
-    for (int m = 0; m < f.depth.rows; m+=2)
+  const int N = 4;
+  const double theta_r_1 = 0.0285714;//34
+  const double theta_s_1 = 0.2;//5
+  for(int m = 4;m < depth.rows; m++)
+    for(int n = 4;n < depth.cols; n++)
     {
-      for (int n = 0; n < f.depth.cols; n+=2)
-        {
-            // 获取深度图中(m,n)处的值,m为行，n为列
-            ushort d = f.depth.ptr<ushort>(m)[n];
-            // d 可能没有值，若如此，跳过此点
-            if (d == 0)
-                continue;
-            // d 存在值，则向点云增加一个点
-            Vector3d p;
-            // 计算这个点的空间坐标
-            p(2) = double(d) / camera.scale;
-            p(0) = (n - camera.cx) * p(2) / camera.fx;
-            p(1) = (m - camera.cy) * p(2) / camera.fy;  
-	   // testDBG(p);
-           // 从rgb图像中获取它的颜色
-            // rgb是三通道的BGR格式图，所以按下面的顺序获取颜色
-/*          p.b = rgb.ptr<uchar>(m)[n*3];
-            p.g = rgb.ptr<uchar>(m)[n*3+1];
-            p.r = rgb.ptr<uchar>(m)[n*3+2];  
-*/ 
-	    //将三维坐标output提到vertices。对应的图像坐标放到最后两位。
-	    Vsets.resize(num+1);
-	    Vsets(num).worldCoord = p;
-	    Vsets(num).imgCoord = Vector2i(m,n);
-	    ++num;
+      double w_s[m+N][n+N],w_r[m+N][n+N],w[m+N][n+N];
+      double w_total = 0;
+      double wxg_total = 0;
+      for(int i = m-N; i < m+N;i++)
+	for (int j = n-N; j < n+N;j++)
+	{
+	  if(i < 0||j < 0||i >= depth.rows || j >= depth.cols)
+	    continue;
+	  w_s[i][j] = exp(((i-m)*(i-m)+(j-n)*(j-n))*0.5*theta_s_1*theta_s_1);
+	  double diff = double(depth.ptr<ushort>(i)[j] - depth.ptr<ushort>(m)[n])*0.05;//先缩小20倍，否则w_r可能会超界，e3000*3000
+	  w_r[i][j] = exp(diff*diff*0.5*theta_r_1*theta_r_1);
+	  w[i][j] = w_s[i][j]*w_r[i][j];
+	  w_total += w[i][j];
+	  wxg_total += w[i][j]*double(depth.ptr<ushort>(i)[j])*0.05;
 	}
+	double dp = wxg_total/w_total;
+      output.ptr<double>(m)[n] = dp*20;
     }
-    return Vsets;
-
 }
 
 //get int image coord, then get its depth 
-Vector3d find_assoc_3Dpoint(int m,int n,Vertices Vset,FRAME f,CAMERA_INS camera)//越界返回的是0
+//(u,v)对应(n,m)!!!!!!
+Vector3d find_assoc_3Dpoint(int n,int m,cv::Mat depth,CAMERA_INS camera)//越界返回的是0
 {
-    Vector3d p;
-    if(m >= f.depth.rows || n >= f.depth.cols || m < 1 || n < 1)
+    if(m >= depth.rows || n >= depth.cols || m < 1 || n < 1)
        return Vector3d::Zero();
-    ushort d = f.depth.ptr<ushort>(m)[n];
+    auto d = depth.ptr<ushort>(m)[n];//注意类型，
     if(d == 0)
        return Vector3d::Zero();
-    // 计算这个点的空间坐标
-    p(2) = double(d) / camera.scale;
-    p(0) = (double(n) - camera.cx) * p(2) / camera.fx;
-    p(1) = (double(m) - camera.cy) * p(2) / camera.fy;  
-    return p;
+    // 计算这个点的空间坐标,1/fx = 0.0019305,1/fy = 0.00192678,(u,v),u=n,v=m
+    double z = double(d) *0.001;
+    double x = (double(n) - camera.cx) * z * 0.0019305;
+    double y = (double(m) - camera.cy) * z * 0.00192678;  
+    return Vector3d(x,y,z);
 }
-Vector3d find_assoc_3Dpoint(Vector2i iid,Vertices Vset,FRAME f,CAMERA_INS camera)//越界返回的是0
+
+Vector3d find_assoc_3Dpoint(Vector2i iid,cv::Mat depth,CAMERA_INS camera)//越界返回的是0
 {
-  Vector3d out = find_assoc_3Dpoint(iid(0),iid(1),Vset, f, camera);
-  return out;
+ return find_assoc_3Dpoint(iid(0),iid(1), depth, camera);
+}
+//在映射点区域搜索最邻近点
+Vector3d find_closest_assoc_3Dpoint(Vector3d target,Vector2i imgid,cv::Mat target_depth,CAMERA_INS camera)
+{
+  const int ksize = 1;//在5x5的kernel里找
+  int r = imgid(0);
+  int c = imgid(1);
+  int sized = (2*ksize+1)*(2*ksize+1);
+  double dist[sized];
+  int num = 0;
+  //Vector3d certer = find_assoc_3Dpoint(imgid,target_depth,camera);
+  for (int dr = r-ksize; dr <= r+ksize; dr++)
+    for(int dc = c-ksize; dc <= c+ksize; dc++)
+    {
+      Vector3d dpoint = find_assoc_3Dpoint(dr,dc,target_depth,camera);
+      dist[num] = (target-dpoint).norm();
+      num++;
+    }
+  int position = min_element(dist,dist+sized) - dist;//位置差
+  int m = r-ksize + position/(2*ksize+1);
+  int n = c-ksize + position - (m-r+ksize)*(2*ksize+1);
+  return find_assoc_3Dpoint(m,n,target_depth,camera);
 }
 //深度差分得normal
-Vector3d compute_m_normal(Vector2i iid,Vertices Vset,FRAME f,CAMERA_INS camera)
+Vector3d compute_m_normal(Vector2i iid,cv::Mat depth,CAMERA_INS camera)
 {
     const int kHalfRegion = 2;
     Vector2i tmp1,tmp2;
@@ -103,8 +124,8 @@ Vector3d compute_m_normal(Vector2i iid,Vertices Vset,FRAME f,CAMERA_INS camera)
     {
       tmp1 = iid + Vector2i(-kHalfRegion, y);
       tmp2 = iid + Vector2i(kHalfRegion, y);
-      Vector3d p1 = find_assoc_3Dpoint(tmp1,Vset,f,camera);
-      Vector3d p2 = find_assoc_3Dpoint(tmp2,Vset,f,camera);
+      Vector3d p1 = find_assoc_3Dpoint(tmp1,depth,camera);
+      Vector3d p2 = find_assoc_3Dpoint(tmp2,depth,camera);
       //有一个出界的话，normal就不准，都不要
       if(p1 == Vector3d::Zero() || p2 == Vector3d::Zero())
       {
@@ -117,8 +138,8 @@ Vector3d compute_m_normal(Vector2i iid,Vertices Vset,FRAME f,CAMERA_INS camera)
     {
       	  tmp1 = iid + Vector2i(x, -kHalfRegion);
 	  tmp2 = iid + Vector2i(x, kHalfRegion);
-	  Vector3d p1 = find_assoc_3Dpoint(tmp1,Vset,f,camera);
-	  Vector3d p2 = find_assoc_3Dpoint(tmp2,Vset,f,camera);
+	  Vector3d p1 = find_assoc_3Dpoint(tmp1,depth,camera);
+	  Vector3d p2 = find_assoc_3Dpoint(tmp2,depth,camera);
 	  //有一个出界的话，normal就不准，都不要
 	  if(p1 == Vector3d::Zero() || p2 == Vector3d::Zero())
 	  {
@@ -133,52 +154,59 @@ Vector3d compute_m_normal(Vector2i iid,Vertices Vset,FRAME f,CAMERA_INS camera)
    // normal[idx] = Vector4f(n.x(), n.y(), n.z(), 1);
 }
 //3d point project->2d image coord
-Matrix<double,2,1> project2(Matrix<double,3,1> point3,CAMERA_INS camera)
+Vector2d project2(Matrix<double,3,1> point3,CAMERA_INS camera)
 {
-  //x = fx*X + Cx*Z ; y = fy*Y + Cy*Z ; z = Z;
-  Matrix<double,2,1> output;
+  //x = fx*X + Cx*Z ; y = fy*Y + Cy*Z ; z = Z; 
+  Vector2d output; //(u,v)
   output(0) = camera.fx*point3(0)/point3(2) + camera.cx;
   output(1) = camera.fy*point3(1)/point3(2) + camera.cy;
+//  IcpDEBUG_iter(output);
   return output;
 }
 bool useless(Vector3d p)
 {
-  if(fabs(p(0) > 3) || fabs(p(0)) < 0.01|| fabs(p(1) > 1) ||fabs(p(1)) < 0.01|| p(2) > 3 ||p(2) < 0.2) //太近太远的点都不要
+  //差不多以图像长宽边界，然后太近太远的点也不要
+  if(fabs(p(0) > 3) || fabs(p(0)) < 0.01|| fabs(p(1) > 2) ||fabs(p(1)) < 0.01|| p(2) > 10 ||p(2) < 0.2) 
     return true;
   else
     return false;
 }
-RigidTransf<double> compute_rigidTransform (Vertices Vset0, Vertices Vset1,RigidTransf<double> transform2model,double & E_linear,FRAME f1,CAMERA_INS camera)
+
+RigidTransf<double> compute_rigidTransform (RigidTransf<double> transform2model,double & E_linear,FRAME f0,FRAME f1,CAMERA_INS camera,double thresh_dis,double thresh_angle)
 {
     RigidTransf<double>  outZero;
-    Matrix<double, Eigen::Dynamic,6> cof_A;//需要自己回收吗？
-    Matrix<double, Eigen::Dynamic,1> cof_b;
-     Eigen::Matrix<double,6,1> cof_x;
+    Eigen::Matrix<double,6,6> ATA = Eigen::Matrix<double,6,6>::Zero();
+    Eigen::Matrix<double,6,1> ATb = Eigen::Matrix<double,6,1>::Zero();
+    Eigen::Matrix<double,6,1> cof_x;
     int pair_index = 0;
-    for (int i = 0; i < Vset0.size();i++)
+    for (int i = 0; i < f0.depth.rows; i++)//u
+    for (int j = 0; j < f0.depth.cols; j++)//v
       {
 	//计算由Vset0到1的transform
-	Vector3d local_p = Vset0(i).worldCoord;
+	Vector3d local_p0 = find_assoc_3Dpoint(j,i,f0.depth,camera);//(u,v)
+	Vector3d local_p = transform2model.Transf(local_p0);
 	if(useless(local_p))
 	   continue;
-	//testDBG(Vset0(i).worldCoord);
-	Vector2d model_ixd= project2(transform2model.Transf(local_p),camera);//返回的可能是一个越界的图像坐标，下面得到的p,n就会都是0了。
-	Vector2i model_ix = Vector2i(round(model_ixd(0)),round(model_ixd(1)));
 	//这里近似的把点在两个图像中的坐标看做一样的，model_idx即是frame0,也是frame1中，而model_p来源于Vset1
-	Vector3d model_p= find_assoc_3Dpoint(model_ix,Vset1,f1,camera);
-	Vector3d model_n = compute_m_normal(model_ix,Vset1,f1,camera);
-	if(useless(model_p) || model_n == Vector3d::Zero())  //怎么处理？？？,直接跳过，好像会引导优化方向都跳过，会不收敛
+	Vector2d model_ixd= project2(local_p,camera);//返回的可能是一个越界的图像坐标，下面得到的p,n就会都是0了。
+	Vector2i model_ix = Vector2i(round(model_ixd(0)),round(model_ixd(1)));
+	//取整后，去映射点小区域搜索最邻近点
+	Vector3d model_p= find_closest_assoc_3Dpoint(local_p,model_ix,f1.depth,camera);
+	Vector3d model_n = compute_m_normal(model_ix,f1.depth,camera);
+	if(useless(model_p)|| model_n == Vector3d::Zero())  //直接跳过，好像会引导优化方向都跳过，会不收敛
 	    continue;
-	//testDBG(model_n);
+	//IcpDEBUG_iter(model_n);
 	//距离上限约束和方向一致性约束
 	double distances = (local_p - model_p).norm();
-	double angle_cos = (local_p.dot(model_n))/local_p.norm();//angle 控制在60度之内，angle_cos > cos 60
-	//testDBG(distances);
-	//testDBG(angle_cos);
-	if(distances > thresh_dis ||fabs(angle_cos) < 0.5)
+	double angle_cos = (local_p.dot(model_n))/local_p.norm();//angle 控制在30度之内，angle_cos > cos 30
+	//IcpDEBUG_iter(distances);
+	IcpDEBUG_iter(angle_cos);
+	if(distances > thresh_dis ||fabs(angle_cos) < thresh_angle)
 	   continue;
-//   E_nonlinear +=  Dot(deviation,model_n); 
-    /* 线性化，首先pi,qi坐标齐次化,pi==Vset0i, qi==model_p,
+    /* 
+     * 线性化，首先pi,qi坐标齐次化,pi==Vset0i, qi==model_p,
+     * 
+     * 
      E = sum [(M*pi -qi)*ni]^2
      
 	      [1  -y  B  tx]
@@ -191,7 +219,7 @@ RigidTransf<double> compute_rigidTransform (Vertices Vset0, Vertices Vset1,Rigid
     =>A = [nz*Py-ny*Pz, nx*Pz-nz*Px, ny*Px-nx*Py, nx, ny, nz]
     b = n' *(P-Q)
     =>b = [nx*Qx+ny*Qy+nz*Qz-nx*Px-ny*Py-nz*Pz] 
-    */
+
 	Eigen::Matrix<double,1,6> A_i = Eigen::Matrix<double,1,6>::Identity();
 	A_i(0) = model_n(2)*local_p(1) - model_n(1)*local_p(2); //0=x;1=y;2=z;
 	A_i(1) = model_n(0)*local_p(2) - model_n(2)*local_p(0);
@@ -202,62 +230,119 @@ RigidTransf<double> compute_rigidTransform (Vertices Vset0, Vertices Vset1,Rigid
 	double b_i = model_n(0)*( model_p(0)-local_p(0) ) + model_n(1)*( model_p(1)-local_p(1) ) + model_n(2)*( model_p(2)-local_p(2) );
 // 	if(fabs(b_i) < 0.0001 || b_i > 1e+100 ||std::isnan(b_i))
 // 	   continue;
-	cof_A.conservativeResize(pair_index + 1, 6);//出了问题，好像他把之前的值都改变了
+	cof_A.conservativeResize(pair_index + 1, 6);//riSize出了问题，它把之前的值都改变了
 	cof_b.conservativeResize(pair_index + 1);
 	for(int i = 0; i < 6;i++)
 	    cof_A(pair_index,i) = A_i(i);
 	cof_b(pair_index) = b_i;
 	++pair_index;
-	
-// 	testDBG(local_p);
-// 	testDBG(model_p);
-// 	testDBG(model_n);
+  以上是之前采用eigen ls solver 的方法。
+ * 
+ */
+	const float  sx = local_p(0);
+	const float  sy = local_p(1);
+	const float  sz = local_p(2);
+	const float  dx = model_p(0);
+	const float  dy = model_p(1);
+	const float  dz = model_p(2);
+	const float  nx = model_n(0);
+	const float  ny = model_n(1);
+	const float  nz = model_n(2);
+	double a = nz*sy - ny*sz;
+	double b = nx*sz - nz*sx; 
+	double c = ny*sx - nx*sy;
+    //    0  1  2  3  4  5
+    //    6  7  8  9 10 11
+    //   12 13 14 15 16 17
+    //   18 19 20 21 22 23
+    //   24 25 26 27 28 29
+    //   30 31 32 33 34 35
+	ATA  (0,0) += a * a;
+	ATA  (0,1) += a * b;
+	ATA  (0,2) += a * c;
+	ATA  (0,3) += a * nx;
+	ATA  (0,4) += a * ny;
+	ATA  (0,5) += a * nz;
+	ATA  (1,1) += b * b;
+	ATA  (1,2) += b * c;
+	ATA  (1,3) += b * nx;
+	ATA  (1,4) += b * ny;
+	ATA  (1,5) += b * nz;
+	ATA  (2,2) += c * c;
+	ATA  (2,3) += c * nx;
+	ATA  (2,4) += c * ny;
+	ATA  (2,5) += c * nz;
+	ATA  (3,3) += nx * nx;
+	ATA  (3,4) += nx * ny;
+	ATA  (3,5) += nx * nz;
+	ATA  (4,4) += ny * ny;
+	ATA  (4,5) += ny * nz;
+	ATA  (5,5) += nz * nz;
+        double d = nx*dx + ny*dy + nz*dz - nx*sx - ny*sy - nz*sz;
+	ATb(0) += a * d;
+	ATb(1) += b * d;
+	ATb(2) += c * d;
+	ATb(3) += nx * d;
+	ATb(4) += ny * d;
+	ATb(5) += nz * d;
+	pair_index++;
+	Eigen::Matrix<double,3,2> lm;
+	lm.col(0) = local_p;
+	lm.col(1) = model_p;
+ 	IcpDEBUG_iter(lm);
 //为了方便调试，简化	
 //  	if(pair_index > 1000)
 //  	    break;
       }
-      std::cout<<"匹配点对数:"<<pair_index<<std::endl;
+      IcpDEBUG();
+      IcpDEBUG(pair_index);
 //    线性最小二乘问题，normal equations 最快，QR次之，SVD最慢。
 //    问题a，B，y都是欧拉角，需要加优化的约束吗？
 //    Eigen::Matrix<double,6,1> cof_x = (cof_A.transpose()*cof_A).ldlt().solve(At_b);
-//    testDBG(cof_A);
-//    testDBG();
+//    IcpDEBUG(cof_A);
+//    IcpDEBUG();
       if(pair_index < 20)//点太少 可能无解
 	return outZero;
-     cof_x = cof_A.colPivHouseholderQr().solve(cof_b);
+     cof_x = (ATA.inverse() * ATb);
      Matrix3d R = eulerAngle2R(cof_x(0),cof_x(1),cof_x(2));
      Vector3d T = Vector3d(cof_x(3),cof_x(4),cof_x(5));
      //误差
-     E_linear = (cof_A*cof_x - cof_b).norm()/cof_b.norm();
-     std::cout<<"中间误差："<<E_linear<<'\n';
-     
-     testDBG(Vector3d(cof_x(0),cof_x(1),cof_x(2)));
-     testDBG(T);
-    // testDBG(cof_b);
+     E_linear = (ATA*cof_x - ATb).norm()/ATb.norm();
+     IcpDEBUG(E_linear);    
+     IcpDEBUG(Vector3d(cof_x(0),cof_x(1),cof_x(2)));
+     IcpDEBUG(T);
      RigidTransf<double>  Trans2Model(R,T);
     // std::cout<<"中间变换矩阵transform"<<Trans2Model<<std::endl;
      return Trans2Model;
   
 }
-Isometry3d motionEstimate(FRAME frame0, FRAME frame1,CAMERA_INS camera)
+Isometry3d motionEstimate(FRAME frame0, FRAME frame1,CAMERA_INS camera, int icp_iter,double thresh_dis,double thresh_angle)
 {
   //世界坐标,需不需要双边滤波？暂时不
-  Vertices Vset0 = frame2vertices(frame0,camera);
-  Vertices Vset1 = frame2vertices(frame1,camera);
-  if(Vset0.size() < 100 || Vset1.size() < 100)//点少的图像不能做估计,边界上的点也不要
+ // Vertices Vset0 = frame2vertices(frame0,camera);
+ // Vertices Vset1 = frame2vertices(frame1,camera);
+//双边滤波
+//   cv::Mat depthtmp0(frame0.depth.size(),6);
+//   BilateralFilter_depth(frame0.depth,depthtmp0);
+//   frame0.depth = depthtmp0;
+//   cv::Mat depthtmp1(frame1.depth.size(),6);
+//   BilateralFilter_depth(frame1.depth,depthtmp1);
+//   frame1.depth = depthtmp1;
+  int m = frame0.depth.rows;
+  int n = frame0.depth.cols;
+  if(m*n < 100)//点少的图像不能做估计,边界上的点也不要
        return Isometry3d::Identity();
   //原始的为非线性 E = sum[(Rpi+t-qi)*ni]^2
   //线性化： E = sum [(pi-qi)*ni+r*(pixni)+t*ni]^2;
   //double E_nonlinear = 0;
-  Matrix<double,5,1> E_list;
+  Matrix<double,20,1> E_list;
   RigidTransf<double> trans2model;
   //ICP 迭代次数
-  for(int iter = 0; iter < 5; iter++)
+  for(int iter = 0; iter < icp_iter; iter++)
   {
     double E_linear = 0;
-    RigidTransf<double> trans_incre = compute_rigidTransform(Vset0,Vset1,trans2model,E_linear,frame1,camera);
+    RigidTransf<double> trans_incre = compute_rigidTransform(trans2model,E_linear,frame0,frame1,camera,thresh_dis,thresh_angle);
     trans2model.R = trans2model.R * trans_incre.R;
-    //testDBG(trans_incre.t);
     trans2model.t = trans2model.t + trans_incre.t;
     E_list(iter) = E_linear;
   }

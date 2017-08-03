@@ -23,6 +23,7 @@ using namespace std;
 #include <g2o/core/optimization_algorithm_levenberg.h>
 #include <g2o/solvers/eigen/linear_solver_eigen.h>
 
+//#include <pcl/registration/icp.h>
 #include "ICP.cpp"
 // 给定index，读取一帧数据
 FRAME readFrame( int index, ParameterReader& pd );
@@ -49,12 +50,13 @@ int main( int argc, char** argv )
     
     pcl::visualization::CloudViewer viewer("viewer");
 
-    // 是否显示点云
+    // 获得读取的参数
     bool visualize = pd.getData("visualize_pointcloud")==string("yes");
-
     int min_inliers = atoi( pd.getData("min_inliers").c_str() );
     double max_norm = atof( pd.getData("max_norm").c_str() );
-    
+    int icp_iter = atoi( pd.getData("icp_iter").c_str() );
+    double thresh_distance = atof( pd.getData("thresh_distance").c_str());
+    double thresh_angle = atof( pd.getData("thresh_angle").c_str() );
     /******************************* 
     // 新增:有关g2o的初始化
     *******************************/
@@ -102,7 +104,11 @@ int main( int argc, char** argv )
  */       
 //     PointCloud::Ptr cloud0 = image2PointCloud( lastFrame.rgb, lastFrame.depth, camera );
 //     PointCloud::Ptr cloud1 = image2PointCloud( currFrame.rgb, currFrame.depth, camera );
-       Eigen::Isometry3d T = motionEstimate(lastFrame,currFrame,camera);
+
+       Eigen::Isometry3d T = motionEstimate(lastFrame,currFrame,camera,icp_iter,thresh_distance,thresh_angle);
+       double tnorm = (T.translation().norm());
+       if ( tnorm >= max_norm )
+            continue;
         cout<<"T="<<T.matrix()<<endl;
         // 去掉可视化的话，会快一些
         if ( visualize == true )
@@ -175,7 +181,7 @@ FRAME readFrame( int index, ParameterReader& pd )
     ss<<depthDir<<index<<depthExt;
     ss>>filename;
 
-    f.depth = cv::imread( filename, -1 );
+    f.depth = cv::imread( filename, -1);
     f.frameID = index;
     return f;
 }
